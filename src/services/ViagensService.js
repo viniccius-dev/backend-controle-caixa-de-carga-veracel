@@ -1,6 +1,6 @@
 const AppError = require("../utils/AppError");
 const { normalizarFornecedor } = require("../utils/fornecedor");
-const { PBT_BASE, VOLUME_META, MAX_LOTE } = require("../configs/regras");
+const { PBT_BASE, MAX_LOTE } = require("../configs/regras");
 
 // Campos que chegam do SGF. Vazio nunca apaga valor ja gravado.
 const CAMPOS = {
@@ -28,14 +28,19 @@ const vazio = (v) => v === undefined || v === null || v === "";
 /**
  * Estagio da viagem.
  *  em_transito - ainda nao pesou ou nao cubou: nao da para avaliar
- *  com_desvio  - sobrou espaco (volume < meta) E sobrou peso (pbt < base): vai para a fila
- *  sem_desvio  - encheu a caixa ou atingiu o peso: nao ha o que avaliar
+ *  com_desvio  - sobrou peso (pbt < base): vai para a fila
+ *  sem_desvio  - atingiu o PBT base: nao havia mais peso para trazer
+ *
+ * A fila olha SO o peso. Ate 07/10/2026 exigia tambem volume abaixo de 62 m3, e
+ * isso escondia a viagem que saiu com volume alto e peso baixo - justamente a que
+ * a gestao quer ver. O volume continua sendo necessario para avaliar (sem ele nao
+ * da para estimar ociosidade), mas nao e mais um limite.
  */
-function classificar(pbt, volume, pbtBase = PBT_BASE, volumeMeta = VOLUME_META) {
+function classificar(pbt, volume, pbtBase = PBT_BASE) {
     const temPbt = pbt != null && Number.isFinite(Number(pbt));
     const temVol = volume != null && Number.isFinite(Number(volume));
     if (!temPbt || !temVol) return "em_transito";
-    return Number(volume) < volumeMeta && Number(pbt) < pbtBase ? "com_desvio" : "sem_desvio";
+    return Number(pbt) < pbtBase ? "com_desvio" : "sem_desvio";
 }
 
 /** Valida uma viagem do lote. null quando esta ok, ou o motivo da rejeicao. */
