@@ -13,6 +13,7 @@ viagensRoutes.get("/resumo", ensureApiKey, viagensController.resumo);
 viagensRoutes.get("/", ensureApiKey, viagensController.index);
 viagensRoutes.post("/", ensureApiKey, viagensController.create);
 viagensRoutes.delete("/", ensureApiKey, viagensController.destroy);
+viagensRoutes.get("/:guia/foto", ensureApiKey, viagensController.foto);
 viagensRoutes.patch("/:guia", ensureApiKey, viagensController.update);
 
 module.exports = viagensRoutes;
