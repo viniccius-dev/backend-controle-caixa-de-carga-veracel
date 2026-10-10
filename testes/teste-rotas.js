@@ -40,7 +40,7 @@ const conferir = (nome, obtido, esperado) => {
             headers: { "Content-Type": "application/json", "X-API-Key": "chave-de-teste", ...(opcoes.headers || {}) },
         });
 
-    // base: 2 com desvio, 1 sem desvio, 1 em transito
+    // base: 2 com desvio, 1 sem desvio (peso no limite), 1 em transito
     const viagem = (guia, pbt, volume, extra = {}) => ({
         guia, serie: guia.split("-")[0], numeroDocumento: Number(guia.split("-")[1]),
         fornecedor: "SERRANALOG TRANSPORTES LTDA - BA",
@@ -56,7 +56,7 @@ const conferir = (nome, obtido, esperado) => {
         body: JSON.stringify({ origem: "teste", viagens: [
             viagem("3-900001", 70000, 50),
             viagem("3-900002", 71000, 55),
-            viagem("3-900003", 70000, 63),
+            viagem("3-900003", 75000, 63),
             { ...viagem("3-900004", null, null), fornecedor: "JSL S/A - BA" },
         ] }),
     })).json();
@@ -68,7 +68,7 @@ const conferir = (nome, obtido, esperado) => {
     conferir("campos traduzidos para o front",
         [lista[0].alertaId !== undefined, lista[0].pbtReal > 0, lista[0].volumeCarga > 0, lista[0].equipamento],
         [true, true, true, "TOL-2D46"]);
-    conferir("fueiro comeca nao conforme", [lista[0].fueiro1, lista[0].fueiro2, lista[0].fueiro3], [false, false, false]);
+    conferir("fueiro comeca conforme", [lista[0].fueiro1, lista[0].fueiro2, lista[0].fueiro3], [true, true, true]);
     conferir("desvio identificado comeca pendente", lista[0].desvioIdentificado, null);
 
     lista = await (await chamar("/viagens?classificacao=todas")).json();
@@ -105,6 +105,38 @@ const conferir = (nome, obtido, esperado) => {
 
     const vazio = await (await chamar("/viagens/estatisticas?de=2020-01-01&ate=2020-12-31")).json();
     conferir("periodo sem viagens nao quebra", [vazio.totalViagens, vazio.comDesvio], [0, 0]);
+
+    // a foto nao viaja na listagem: e base64 de centenas de KB por viagem
+    const resposta = await chamar("/viagens");
+    const comFoto = (await resposta.clone().json()).find((x) => x.alertaId === "3-900001");
+    conferir("listagem nao traz a foto, so o indicador",
+        [comFoto.foto, comFoto.temFoto], [undefined, true]);
+    conferir("listagem informa o total do filtro no cabecalho",
+        resposta.headers.get("X-Total-Count"), "2");
+
+    const semFoto = (await (await chamar("/viagens")).json()).find((x) => x.alertaId === "3-900002");
+    conferir("viagem sem foto vem com temFoto falso", semFoto.temFoto, false);
+
+    const foto = await (await chamar("/viagens/3-900001/foto")).json();
+    conferir("foto vem por guia, sob demanda", foto.foto?.slice(0, 10), "data:image");
+    conferir("foto de guia inexistente responde 404",
+        (await chamar("/viagens/9-999999/foto")).status, 404);
+
+    // paginacao de verdade: o recorte e do servidor e o total continua visivel
+    const pagina = await chamar("/viagens?classificacao=todas&limite=2&offset=0");
+    conferir("limite recorta a pagina", (await pagina.json()).length, 2);
+    conferir("total ignora o limite", pagina.headers.get("X-Total-Count"), "4");
+    const p2 = await chamar("/viagens?classificacao=todas&limite=2&offset=2");
+    conferir("offset traz a pagina seguinte", (await p2.json()).length, 2);
+
+    // nome agrupado da transportadora, pronto para o painel
+    conferir("listagem traz o fornecedor normalizado",
+        comFoto.fornecedorNorm, "SERRANALOG TRANSPORTES LTDA");
+
+    // serie diaria para a taxa de alertas por mil viagens
+    const comDia = await (await chamar("/viagens/estatisticas?de=2026-10-01&ate=2026-10-01")).json();
+    conferir("estatisticas trazem a serie por dia",
+        comDia.porDia, [{ dia: "2026-10-01", viagens: 4, comDesvio: 2 }]);
 
     // exclusao
     r = await (await chamar("/viagens?guias=3-900003", { method: "DELETE" })).json();
