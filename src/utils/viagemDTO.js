@@ -14,6 +14,9 @@ function paraFront(linha) {
     return {
         alertaId: linha.guia,
         fornecedor: linha.fornecedor || "",
+        // nome agrupado, sem o sufixo de estado: "... LTDA - BA" e "... LTDA - MG"
+        // viram o mesmo. Vem pronto do banco para a tela nao precisar repetir a regra.
+        fornecedorNorm: linha.fornecedor_norm || linha.fornecedor || "",
         dataChegadaBalanca: linha.data_chegada_balanca || linha.data_inicio_viagem || "",
         pbtReal: linha.pbt ?? 0,
         pbtBase: linha.pbt_base ?? PBT_BASE_PADRAO,
@@ -33,6 +36,8 @@ function paraFront(linha) {
         fueiro2: !!linha.fueiro2,
         fueiro3: !!linha.fueiro3,
         foto: linha.foto || undefined,
+        // na listagem a foto nao vem junto; tem_foto diz se existe uma para buscar
+        temFoto: linha.tem_foto !== undefined ? !!linha.tem_foto : !!linha.foto,
         observacao: linha.observacao || undefined,
 
         classificacao: linha.classificacao,
