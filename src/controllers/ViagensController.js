@@ -16,19 +16,40 @@ class ViagensController {
         return response.json({ ok: true, ...resumo });
     }
 
-    /** Lista para a plataforma. Devolve so viagens com desvio, salvo pedido explicito. */
+    /**
+     * Lista para a plataforma. Devolve so viagens com desvio, salvo pedido explicito.
+     *
+     * A resposta continua sendo um array puro, para nao quebrar quem ja consome.
+     * O total do filtro vai no cabecalho X-Total-Count: com ele a tela sabe se
+     * ainda falta pagina para buscar, em vez de receber um recorte silencioso.
+     */
     async index(request, response) {
         const { de, ate, classificacao, fornecedor, projeto, limite, offset } = request.query;
-        const linhas = await new ViagensRepository().listar({
-            de,
-            ate,
-            classificacao,
-            fornecedor,
-            projeto,
+        const repository = new ViagensRepository();
+        const filtros = { de, ate, classificacao, fornecedor, projeto };
+
+        const paginacao = {
             limite: Math.min(Number(limite) || LIMITE_PADRAO, LIMITE_MAXIMO),
-            offset: Number(offset) || 0,
-        });
+            offset: Math.max(Number(offset) || 0, 0),
+        };
+
+        const [total, linhas] = await Promise.all([
+            repository.contar(filtros),
+            repository.listar({ ...filtros, ...paginacao }),
+        ]);
+
+        response.set("X-Total-Count", String(total));
+        response.set("X-Limite", String(paginacao.limite));
+        response.set("X-Offset", String(paginacao.offset));
+        response.set("Access-Control-Expose-Headers", "X-Total-Count, X-Limite, X-Offset");
         return response.json(linhas.map(paraFront));
+    }
+
+    /** Foto de uma viagem, buscada so quando a tela vai exibir. */
+    async foto(request, response) {
+        const linha = await new ViagensRepository().buscarFoto(request.params.guia);
+        if (!linha) throw new AppError(`viagem ${request.params.guia} nao encontrada`, 404);
+        return response.json({ alertaId: linha.guia, foto: linha.foto || null });
     }
 
     /** Grava o que o analista preencheu. Dado do SGF nao entra por aqui. */
@@ -63,7 +84,7 @@ class ViagensController {
      */
     async estatisticas(request, response) {
         const { de, ate } = request.query;
-        const { totais, porFornecedor, comDesvioPorFornecedor } = await new ViagensRepository()
+        const { totais, porFornecedor, comDesvioPorFornecedor, porDia } = await new ViagensRepository()
             .estatisticas({ de, ate });
 
         const numero = (x) => Number(x || 0);
@@ -77,6 +98,12 @@ class ViagensController {
 
         return response.json({
             periodo: { de: de || null, ate: ate || null },
+            // viagens e alertas dia a dia: base da taxa de alertas por mil viagens
+            porDia: porDia.map((d) => ({
+                dia: d.dia,
+                viagens: numero(d.viagens),
+                comDesvio: numero(d.comDesvio),
+            })),
             totalViagens: soma("viagens"),
             volumeTotal: soma("volume"),
             porClassificacao: porClasse,
